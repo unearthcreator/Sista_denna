@@ -21,6 +21,8 @@ import 'package:map_mvp_project/src/earth_map/annotations/annotation_menu.dart';
 // 1. Import your new actions class
 import 'package:map_mvp_project/src/earth_map/annotations/annotation_actions.dart';
 
+
+//comment
 /// The main EarthMapPage, which sets up the map, annotations, and various UI widgets.
 class EarthMapPage extends StatefulWidget {
   final WorldConfig worldConfig;
@@ -383,3 +385,4 @@ class EarthMapPageState extends State<EarthMapPage> {
     );
   }
 }
+
