@@ -21,6 +21,8 @@ import 'package:map_mvp_project/src/earth_map/annotations/annotation_menu.dart';
 // 1. Import your new actions class
 import 'package:map_mvp_project/src/earth_map/annotations/annotation_actions.dart';
 
+
+//comment
 /// The main EarthMapPage, which sets up the map, annotations, and various UI widgets.
 class EarthMapPage extends StatefulWidget {
   final WorldConfig worldConfig;
@@ -151,10 +153,8 @@ class EarthMapPageState extends State<EarthMapPage> {
     if (_annotationMenuAnnotation != null && _showAnnotationMenu) {
       final geo = _annotationMenuAnnotation!.geometry;
       final screenPos = await _mapboxMap.pixelForCoordinate(geo);
-
       setState(() {
-        // Adjust offset as you like:
-        _annotationMenuOffset = Offset(screenPos.x + 15, screenPos.y - 45);
+        _annotationMenuOffset = Offset(screenPos.x + 15, screenPos.y - 42);
       });
     }
   }
@@ -167,7 +167,7 @@ class EarthMapPageState extends State<EarthMapPage> {
     setState(() {
       _annotationMenuAnnotation = annotation;
       _showAnnotationMenu = true;
-      _annotationMenuOffset = Offset(screenPos.x + 15, screenPos.y - 45);
+      _annotationMenuOffset = Offset(screenPos.x + 15, screenPos.y - 42);
     });
   }
 
@@ -175,7 +175,7 @@ class EarthMapPageState extends State<EarthMapPage> {
     final screenPos = await _mapboxMap.pixelForCoordinate(annotation.geometry);
     setState(() {
       _annotationMenuAnnotation = annotation;
-      _annotationMenuOffset = Offset(screenPos.x + 15, screenPos.y - 45);
+      _annotationMenuOffset = Offset(screenPos.x + 15, screenPos.y -42);
     });
   }
 
@@ -192,64 +192,43 @@ class EarthMapPageState extends State<EarthMapPage> {
   }
 
   // ---------------------------------------------------------------------
-  //                        GESTURE LOGIC
+  //                          LONG PRESS HANDLERS
   // ---------------------------------------------------------------------
-  // We keep your existing onLongPress if you want it,
-  // but now also add pan logic for "immediate" drag if _isDragging = true.
-  
-  void _handleLongPressStart(LongPressStartDetails details) {
-    logger.i('Long press started at: ${details.localPosition}');
-    final screenPoint = ScreenCoordinate(
-      x: details.localPosition.dx,
-      y: details.localPosition.dy,
-    );
-    _gestureHandler.handleLongPress(screenPoint);
-  }
-
-  void _handleLongPressMoveUpdate(LongPressMoveUpdateDetails details) {
-    if (_isDragging) {
+  void _handleLongPress(LongPressStartDetails details) {
+    try {
+      logger.i('Long press started at: ${details.localPosition}');
       final screenPoint = ScreenCoordinate(
         x: details.localPosition.dx,
         y: details.localPosition.dy,
       );
-      _gestureHandler.handleDrag(screenPoint);
+      _gestureHandler.handleLongPress(screenPoint);
+    } catch (e, stackTrace) {
+      logger.e('Error handling long press', error: e, stackTrace: stackTrace);
+    }
+  }
+
+  void _handleLongPressMoveUpdate(LongPressMoveUpdateDetails details) {
+    try {
+      if (_isDragging) {
+        final screenPoint = ScreenCoordinate(
+          x: details.localPosition.dx,
+          y: details.localPosition.dy,
+        );
+        _gestureHandler.handleDrag(screenPoint);
+      }
+    } catch (e, stackTrace) {
+      logger.e('Error handling drag update', error: e, stackTrace: stackTrace);
     }
   }
 
   void _handleLongPressEnd(LongPressEndDetails details) {
-    logger.i('Long press ended');
-    if (_isDragging) {
-      _gestureHandler.endDrag();
-    }
-  }
-
-  // *** NEW: Pan logic for immediate press-and-drag ***
-  void _handlePanStart(DragStartDetails details) {
-    logger.i('Pan start at: ${details.localPosition}');
-    if (_isDragging) {
-      final screenPoint = ScreenCoordinate(
-        x: details.localPosition.dx,
-        y: details.localPosition.dy,
-      );
-      // Reuse handleLongPress if you want to unify logic:
-      _gestureHandler.handleLongPress(screenPoint);
-    }
-  }
-
-  void _handlePanUpdate(DragUpdateDetails details) {
-    if (_isDragging) {
-      final screenPoint = ScreenCoordinate(
-        x: details.localPosition.dx,
-        y: details.localPosition.dy,
-      );
-      _gestureHandler.handleDrag(screenPoint);
-    }
-  }
-
-  void _handlePanEnd(DragEndDetails details) {
-    logger.i('Pan end');
-    if (_isDragging) {
-      _gestureHandler.endDrag();
+    try {
+      logger.i('Long press ended');
+      if (_isDragging) {
+        _gestureHandler.endDrag();
+      }
+    } catch (e, stackTrace) {
+      logger.e('Error handling long press end', error: e, stackTrace: stackTrace);
     }
   }
 
@@ -314,11 +293,10 @@ class EarthMapPageState extends State<EarthMapPage> {
   //                            UI BUILDERS
   // ---------------------------------------------------------------------
   Widget _buildMapWidget() {
-    // We'll keep the existing GestureDetector but add pan logic 
-    // so a normal press -> pan can drag the annotation if _isDragging
+    // We wrap the MapWidget in a GestureDetector so we keep
+    // onLongPressStart, onLongPressMoveUpdate, onLongPressEnd, etc.
     return GestureDetector(
-      // Existing long press-based logic
-      onLongPressStart: _handleLongPressStart,
+      onLongPressStart: _handleLongPress,
       onLongPressMoveUpdate: _handleLongPressMoveUpdate,
       onLongPressEnd: _handleLongPressEnd,
       onLongPressCancel: () {
@@ -327,16 +305,11 @@ class EarthMapPageState extends State<EarthMapPage> {
           _gestureHandler.endDrag();
         }
       },
-
-      // *** New: "normal" press + drag logic for immediate drag
-      onPanStart: _handlePanStart,
-      onPanUpdate: _handlePanUpdate,
-      onPanEnd: _handlePanEnd,
-
       child: MapWidget(
         cameraOptions: MapConfig.defaultCameraOptions,
         styleUri: MapConfig.styleUriEarth,
         onMapCreated: _onMapCreated,
+        // The official doc approach: supply an onCameraChangeListener
         onCameraChangeListener: _onCameraChangeListener,
       ),
     );
@@ -353,6 +326,7 @@ class EarthMapPageState extends State<EarthMapPage> {
           // The main map widget, wrapped in Gestures + camera-listener
           _buildMapWidget(),
 
+          // Only show these overlays if the map is ready
           if (_isMapReady) ...[
             buildTimelineButton(
               isMapReady: _isMapReady,
@@ -395,6 +369,7 @@ class EarthMapPageState extends State<EarthMapPage> {
               isConnectMode: _isConnectMode,
               gestureHandler: _gestureHandler,
               onCancel: () {
+                // Called if user taps "Cancel"
                 setState(() {
                   _isConnectMode = false;
                 });
@@ -410,3 +385,4 @@ class EarthMapPageState extends State<EarthMapPage> {
     );
   }
 }
+
