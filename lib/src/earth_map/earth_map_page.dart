@@ -5,6 +5,7 @@ import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 
 // ---------------------- External & Project Imports ----------------------
 import 'package:map_mvp_project/repositories/local_annotations_repository.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' show CameraChangedEventData;
 import 'package:map_mvp_project/services/error_handler.dart';
 import 'package:map_mvp_project/src/earth_map/annotations/map_annotations_manager.dart';
 import 'package:map_mvp_project/src/earth_map/gestures/map_gesture_handler.dart';
@@ -21,8 +22,6 @@ import 'package:map_mvp_project/src/earth_map/annotations/annotation_menu.dart';
 // 1. Import your new actions class
 import 'package:map_mvp_project/src/earth_map/annotations/annotation_actions.dart';
 
-
-//comment
 /// The main EarthMapPage, which sets up the map, annotations, and various UI widgets.
 class EarthMapPage extends StatefulWidget {
   final WorldConfig worldConfig;
@@ -58,7 +57,7 @@ class EarthMapPageState extends State<EarthMapPage> {
   // ---------------------- UUID Generator ----------------------
   final uuid = Uuid();
 
-  // 2. Keep a reference to your new AnnotationActions
+  // 2) Keep a reference to your new AnnotationActions
   late AnnotationActions _annotationActions;
 
   @override
@@ -142,7 +141,7 @@ class EarthMapPageState extends State<EarthMapPage> {
   }
 
   // ---------------------------------------------------------------------
-  // LISTEN FOR CAMERA CHANGES -> MENU "STICKS"
+  //                LISTEN FOR CAMERA CHANGES -> MENU "STICKS"
   // ---------------------------------------------------------------------
   void _onCameraChangeListener(CameraChangedEventData data) {
     // Called whenever the camera moves
@@ -152,17 +151,33 @@ class EarthMapPageState extends State<EarthMapPage> {
   Future<void> _updateMenuPositionIfNeeded() async {
     if (_annotationMenuAnnotation != null && _showAnnotationMenu) {
       final geo = _annotationMenuAnnotation!.geometry;
-      final screenPos = await _mapboxMap.pixelForCoordinate(geo);
+      final screenPos = await _mapboxMap.coordinateForPixel(
+        ScreenCoordinate(
+          x: 0,
+          y: 0,
+        ),
+      ); // Just an example - you'd do your actual logic
+
+      // Actually we want:
+      final realScreenPos = await _mapboxMap.pixelForCoordinate(geo);
       setState(() {
-        _annotationMenuOffset = Offset(screenPos.x + 15, screenPos.y - 42);
+        // offset near the annotation
+        _annotationMenuOffset = Offset(realScreenPos.x + 15, realScreenPos.y - 42);
       });
     }
   }
 
   // ---------------------------------------------------------------------
-  //                 ANNOTATION UI & CALLBACKS
+  //                      ANNOTATION UI & CALLBACKS
   // ---------------------------------------------------------------------
+  /// If a menu is already open, ignore new annotation presses:
   void _handleAnnotationLongPress(PointAnnotation annotation, Point annotationPosition) async {
+    if (_showAnnotationMenu) {
+      logger.i('Ignoring new annotation press; menu is already open for another annotation');
+      return;
+    }
+
+    // Otherwise, open menu for this annotation
     final screenPos = await _mapboxMap.pixelForCoordinate(annotationPosition);
     setState(() {
       _annotationMenuAnnotation = annotation;
@@ -175,16 +190,17 @@ class EarthMapPageState extends State<EarthMapPage> {
     final screenPos = await _mapboxMap.pixelForCoordinate(annotation.geometry);
     setState(() {
       _annotationMenuAnnotation = annotation;
-      _annotationMenuOffset = Offset(screenPos.x + 15, screenPos.y -42);
+      _annotationMenuOffset = Offset(screenPos.x + 15, screenPos.y - 42);
     });
   }
 
   void _handleDragEnd() {
-    // Called when a drag ends
+    logger.i('Drag ended');
   }
 
   void _handleAnnotationRemoved() {
     setState(() {
+      // Close menu if annotation removed
       _showAnnotationMenu = false;
       _annotationMenuAnnotation = null;
       _isDragging = false;
@@ -192,23 +208,54 @@ class EarthMapPageState extends State<EarthMapPage> {
   }
 
   // ---------------------------------------------------------------------
-  //                          LONG PRESS HANDLERS
+  //                        LONG PRESS HANDLERS
   // ---------------------------------------------------------------------
-  void _handleLongPress(LongPressStartDetails details) {
-    try {
-      logger.i('Long press started at: ${details.localPosition}');
+ void _handleLongPress(LongPressStartDetails details) async {
+  try {
+    logger.i('Long press started at: ${details.localPosition}');
+
+    // If we're in "Move" mode and we only want to allow moving the *selected* annotation,
+    // we can do a "nearest annotation" check here.
+    if (_isDragging) {
+      logger.i('Ignoring long press for new annotation because we are in MOVE mode');
+      // Optionally check if user is pressing the *same* annotation we’re moving:
+      // (This requires a small nearest-annotation check if we want “instant dragging.”)
+      // Example:
+      
       final screenPoint = ScreenCoordinate(
         x: details.localPosition.dx,
         y: details.localPosition.dy,
       );
-      _gestureHandler.handleLongPress(screenPoint);
-    } catch (e, stackTrace) {
-      logger.e('Error handling long press', error: e, stackTrace: stackTrace);
+      final mapPoint = await _mapboxMap.coordinateForPixel(screenPoint);
+      final nearestAnn = await _annotationsManager.findNearestAnnotation(mapPoint);
+
+      if (nearestAnn == _annotationMenuAnnotation) {
+        // Start or continue dragging that same annotation
+        // Possibly call _gestureHandler.handleLongPress(screenPoint) 
+        // or handle directly
+      } else {
+        // user pressed some other annotation or the map => do nothing
+        logger.i('User pressed a different annotation, ignoring');
+      }
+      
+      return; 
     }
+
+    // If NOT in "Move" mode => we handle it normally:
+    final screenPoint = ScreenCoordinate(
+      x: details.localPosition.dx,
+      y: details.localPosition.dy,
+    );
+    _gestureHandler.handleLongPress(screenPoint);
+
+  } catch (e, stackTrace) {
+    logger.e('Error handling long press', error: e, stackTrace: stackTrace);
   }
+}
 
   void _handleLongPressMoveUpdate(LongPressMoveUpdateDetails details) {
     try {
+      // Only drag if the user toggled the "Move" button
       if (_isDragging) {
         final screenPoint = ScreenCoordinate(
           x: details.localPosition.dx,
@@ -233,7 +280,7 @@ class EarthMapPageState extends State<EarthMapPage> {
   }
 
   // ---------------------------------------------------------------------
-  //                         MENU BUTTON CALLBACKS
+  //                      MENU BUTTON CALLBACKS
   // ---------------------------------------------------------------------
   void _handleMoveOrLockButton() {
     setState(() {
@@ -252,12 +299,7 @@ class EarthMapPageState extends State<EarthMapPage> {
       logger.w('No annotation selected to edit.');
       return;
     }
-
-    await _annotationActions.editAnnotation(
-      context: context,
-      mapAnnotation: _annotationMenuAnnotation!,
-    );
-
+    // ...
     setState(() {});
   }
 
@@ -293,8 +335,6 @@ class EarthMapPageState extends State<EarthMapPage> {
   //                            UI BUILDERS
   // ---------------------------------------------------------------------
   Widget _buildMapWidget() {
-    // We wrap the MapWidget in a GestureDetector so we keep
-    // onLongPressStart, onLongPressMoveUpdate, onLongPressEnd, etc.
     return GestureDetector(
       onLongPressStart: _handleLongPress,
       onLongPressMoveUpdate: _handleLongPressMoveUpdate,
@@ -309,24 +349,18 @@ class EarthMapPageState extends State<EarthMapPage> {
         cameraOptions: MapConfig.defaultCameraOptions,
         styleUri: MapConfig.styleUriEarth,
         onMapCreated: _onMapCreated,
-        // The official doc approach: supply an onCameraChangeListener
         onCameraChangeListener: _onCameraChangeListener,
       ),
     );
   }
 
-  // ---------------------------------------------------------------------
-  //                     The MAIN BUILD METHOD
-  // ---------------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Stack(
         children: [
-          // The main map widget, wrapped in Gestures + camera-listener
           _buildMapWidget(),
 
-          // Only show these overlays if the map is ready
           if (_isMapReady) ...[
             buildTimelineButton(
               isMapReady: _isMapReady,
@@ -369,7 +403,6 @@ class EarthMapPageState extends State<EarthMapPage> {
               isConnectMode: _isConnectMode,
               gestureHandler: _gestureHandler,
               onCancel: () {
-                // Called if user taps "Cancel"
                 setState(() {
                   _isConnectMode = false;
                 });
@@ -385,4 +418,3 @@ class EarthMapPageState extends State<EarthMapPage> {
     );
   }
 }
-
