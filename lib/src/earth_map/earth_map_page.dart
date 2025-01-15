@@ -154,7 +154,7 @@ class EarthMapPageState extends State<EarthMapPage> {
       final geo = _annotationMenuAnnotation!.geometry;
       final screenPos = await _mapboxMap.pixelForCoordinate(geo);
       setState(() {
-        _annotationMenuOffset = Offset(screenPos.x + 30, screenPos.y);
+        _annotationMenuOffset = Offset(screenPos.x + 15, screenPos.y -45);
       });
     }
   }
@@ -167,7 +167,7 @@ class EarthMapPageState extends State<EarthMapPage> {
     setState(() {
       _annotationMenuAnnotation = annotation;
       _showAnnotationMenu = true;
-      _annotationMenuOffset = Offset(screenPos.x + 30, screenPos.y);
+      _annotationMenuOffset = Offset(screenPos.x + 15, screenPos.y -45);
     });
   }
 
@@ -175,7 +175,7 @@ class EarthMapPageState extends State<EarthMapPage> {
     final screenPos = await _mapboxMap.pixelForCoordinate(annotation.geometry);
     setState(() {
       _annotationMenuAnnotation = annotation;
-      _annotationMenuOffset = Offset(screenPos.x + 30, screenPos.y);
+      _annotationMenuOffset = Offset(screenPos.x + 15, screenPos.y - 45);
     });
   }
 
