@@ -79,7 +79,7 @@ class EarthMapPageState extends State<EarthMapPage> {
       logger.i('Starting map initialization');
       _mapboxMap = mapboxMap;
 
-      // 1) Create the underlying Mapbox annotation manager
+      // Create the annotation manager
       final annotationManager = await mapboxMap.annotations
           .createPointAnnotationManager()
           .onError((error, stackTrace) {
@@ -87,20 +87,15 @@ class EarthMapPageState extends State<EarthMapPage> {
         throw Exception('Failed to initialize map annotations');
       });
 
-      // 2) Create a single LocalAnnotationsRepository
       _localRepo = LocalAnnotationsRepository();
-
-      // 3) Create a single shared AnnotationIdLinker instance
       final annotationIdLinker = AnnotationIdLinker();
 
-      // 4) Create our MapAnnotationsManager
       _annotationsManager = MapAnnotationsManager(
         annotationManager,
         annotationIdLinker: annotationIdLinker,
         localAnnotationsRepository: _localRepo,
       );
 
-      // 5) Create the gesture handler
       _gestureHandler = MapGestureHandler(
         mapboxMap: _mapboxMap,
         annotationsManager: _annotationsManager,
@@ -127,7 +122,6 @@ class EarthMapPageState extends State<EarthMapPage> {
 
       logger.i('Map initialization completed successfully');
 
-      // 7) Once the map is ready, load saved Hive annotations
       if (mounted) {
         setState(() => _isMapReady = true);
         await _annotationsManager.loadAnnotationsFromHive();
@@ -144,40 +138,29 @@ class EarthMapPageState extends State<EarthMapPage> {
   //                LISTEN FOR CAMERA CHANGES -> MENU "STICKS"
   // ---------------------------------------------------------------------
   void _onCameraChangeListener(CameraChangedEventData data) {
-    // Called whenever the camera moves
     _updateMenuPositionIfNeeded();
   }
 
   Future<void> _updateMenuPositionIfNeeded() async {
     if (_annotationMenuAnnotation != null && _showAnnotationMenu) {
       final geo = _annotationMenuAnnotation!.geometry;
-      final screenPos = await _mapboxMap.coordinateForPixel(
-        ScreenCoordinate(
-          x: 0,
-          y: 0,
-        ),
-      ); // Just an example - you'd do your actual logic
-
-      // Actually we want:
       final realScreenPos = await _mapboxMap.pixelForCoordinate(geo);
       setState(() {
-        // offset near the annotation
         _annotationMenuOffset = Offset(realScreenPos.x + 15, realScreenPos.y - 42);
       });
     }
   }
 
   // ---------------------------------------------------------------------
-  //                      ANNOTATION UI & CALLBACKS
+  //               ANNOTATION UI & CALLBACKS
   // ---------------------------------------------------------------------
-  /// If a menu is already open, ignore new annotation presses:
   void _handleAnnotationLongPress(PointAnnotation annotation, Point annotationPosition) async {
+    // If a menu is already open, ignore new annotation presses
     if (_showAnnotationMenu) {
-      logger.i('Ignoring new annotation press; menu is already open for another annotation');
+      logger.i('Ignoring new annotation press; menu is already open');
       return;
     }
 
-    // Otherwise, open menu for this annotation
     final screenPos = await _mapboxMap.pixelForCoordinate(annotationPosition);
     setState(() {
       _annotationMenuAnnotation = annotation;
@@ -200,7 +183,6 @@ class EarthMapPageState extends State<EarthMapPage> {
 
   void _handleAnnotationRemoved() {
     setState(() {
-      // Close menu if annotation removed
       _showAnnotationMenu = false;
       _annotationMenuAnnotation = null;
       _isDragging = false;
@@ -208,69 +190,57 @@ class EarthMapPageState extends State<EarthMapPage> {
   }
 
   // ---------------------------------------------------------------------
-  //                        LONG PRESS HANDLERS
+  // LONG PRESS HANDLERS
   // ---------------------------------------------------------------------
-void _handleLongPress(LongPressStartDetails details) async {
-  try {
-    logger.i('Long press started at: ${details.localPosition}');
-    final screenPoint = ScreenCoordinate(
-      x: details.localPosition.dx,
-      y: details.localPosition.dy,
-    );
-
-    // 1) If we’re in "MOVE" mode, do a nearest-annotation check
-    if (_isDragging) {
-      logger.i('User is in MOVE mode - checking if they pressed the same annotation');
-
-      final mapPoint = await _mapboxMap.coordinateForPixel(screenPoint);
-      final nearestAnn = await _annotationsManager.findNearestAnnotation(mapPoint);
-
-      // 2) If the user’s finger is on the *current* annotation => let them drag
-      if (nearestAnn != null && nearestAnn == _annotationMenuAnnotation) {
-        logger.i('User pressed the same annotation => allow longPress => start drag');
-        _gestureHandler.handleLongPress(screenPoint);
-      } else {
-        logger.i('User pressed a different location or annotation => ignoring => no snapping');
-      }
-
-      return; // Return regardless—so no new menu or annotation creation
-    }
-
-    // 3) If NOT in "MOVE" mode => normal logic
-    _gestureHandler.handleLongPress(screenPoint);
-
-  } catch (e, stackTrace) {
-    logger.e('Error handling long press', error: e, stackTrace: stackTrace);
-  }
-}
-
-void _handleLongPressMoveUpdate(LongPressMoveUpdateDetails details) async {
-  try {
-    // Only drag if the user toggled the "Move" button
-    if (_isDragging) {
+  void _handleLongPress(LongPressStartDetails details) async {
+    try {
+      logger.i('Long press started at: ${details.localPosition}');
       final screenPoint = ScreenCoordinate(
         x: details.localPosition.dx,
         y: details.localPosition.dy,
       );
 
-      // Convert the screen coords to map coords
-      final mapPoint = await _mapboxMap.coordinateForPixel(screenPoint);
+      // If we’re in MOVE mode, check if user pressed the same annotation
+      if (_isDragging) {
+        final mapPoint = await _mapboxMap.coordinateForPixel(screenPoint);
+        final nearestAnn = await _annotationsManager.findNearestAnnotation(mapPoint);
 
-      // Check if user’s finger is on the same annotation we’re “moving.”
-      final nearestAnn = await _annotationsManager.findNearestAnnotation(mapPoint);
-      if (nearestAnn == _annotationMenuAnnotation) {
-        // Actually move the annotation
-        _gestureHandler.handleDrag(screenPoint);
-      } else {
-        // The user is moving their finger elsewhere on the map
-        // -> do nothing, so no “jump”
-        logger.i('User is dragging on a different location or annotation -> ignoring.');
+        if (nearestAnn == _annotationMenuAnnotation) {
+          _gestureHandler.handleLongPress(screenPoint);
+        } else {
+          logger.i('Ignoring long press => different annotation or empty space');
+        }
+        return;
       }
+
+      // Not in MOVE mode => normal logic
+      _gestureHandler.handleLongPress(screenPoint);
+
+    } catch (e, stackTrace) {
+      logger.e('Error handling long press', error: e, stackTrace: stackTrace);
     }
-  } catch (e, stackTrace) {
-    logger.e('Error handling drag update', error: e, stackTrace: stackTrace);
   }
-}
+
+  void _handleLongPressMoveUpdate(LongPressMoveUpdateDetails details) async {
+    try {
+      if (_isDragging) {
+        final screenPoint = ScreenCoordinate(
+          x: details.localPosition.dx,
+          y: details.localPosition.dy,
+        );
+        final mapPoint = await _mapboxMap.coordinateForPixel(screenPoint);
+        final nearestAnn = await _annotationsManager.findNearestAnnotation(mapPoint);
+
+        if (nearestAnn == _annotationMenuAnnotation) {
+          _gestureHandler.handleDrag(screenPoint);
+        } else {
+          logger.i('User is dragging on different location => ignoring');
+        }
+      }
+    } catch (e, stackTrace) {
+      logger.e('Error handling drag update', error: e, stackTrace: stackTrace);
+    }
+  }
 
   void _handleLongPressEnd(LongPressEndDetails details) {
     try {
@@ -284,7 +254,7 @@ void _handleLongPressMoveUpdate(LongPressMoveUpdateDetails details) async {
   }
 
   // ---------------------------------------------------------------------
-  //                      MENU BUTTON CALLBACKS
+  // MENU BUTTON CALLBACKS
   // ---------------------------------------------------------------------
   void _handleMoveOrLockButton() {
     setState(() {
@@ -303,7 +273,13 @@ void _handleLongPressMoveUpdate(LongPressMoveUpdateDetails details) async {
       logger.w('No annotation selected to edit.');
       return;
     }
-    // ...
+
+    // If your edit logic calls annotationActions.editAnnotation
+    await _annotationActions.editAnnotation(
+      context: context,
+      mapAnnotation: _annotationMenuAnnotation!,
+    );
+
     setState(() {});
   }
 
@@ -336,10 +312,13 @@ void _handleLongPressMoveUpdate(LongPressMoveUpdateDetails details) async {
   }
 
   // ---------------------------------------------------------------------
-  //                            UI BUILDERS
+  // BUILD MAP + OVERLAYS
   // ---------------------------------------------------------------------
   Widget _buildMapWidget() {
     return GestureDetector(
+      // Let child widgets (like the menu) receive clicks
+      behavior: HitTestBehavior.translucent,
+
       onLongPressStart: _handleLongPress,
       onLongPressMoveUpdate: _handleLongPressMoveUpdate,
       onLongPressEnd: _handleLongPressEnd,
@@ -392,6 +371,7 @@ void _handleLongPressMoveUpdate(LongPressMoveUpdateDetails details) async {
               localRepo: _localRepo,
               uuid: uuid,
             ),
+            // The annotation menu is above the map, so ensure these clicks pass.
             AnnotationMenu(
               show: _showAnnotationMenu,
               annotation: _annotationMenuAnnotation,
@@ -399,7 +379,7 @@ void _handleLongPressMoveUpdate(LongPressMoveUpdateDetails details) async {
               isDragging: _isDragging,
               annotationButtonText: _annotationButtonText,
               onMoveOrLock: _handleMoveOrLockButton,
-              onEdit: _handleEditButton,
+              onEdit: _handleEditButton,   // <-- Edit button here
               onConnect: _handleConnectButton,
               onCancel: _handleCancelButton,
             ),
