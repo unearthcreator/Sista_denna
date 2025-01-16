@@ -210,42 +210,33 @@ class EarthMapPageState extends State<EarthMapPage> {
   // ---------------------------------------------------------------------
   //                        LONG PRESS HANDLERS
   // ---------------------------------------------------------------------
- void _handleLongPress(LongPressStartDetails details) async {
+void _handleLongPress(LongPressStartDetails details) async {
   try {
     logger.i('Long press started at: ${details.localPosition}');
-
-    // If we're in "Move" mode and we only want to allow moving the *selected* annotation,
-    // we can do a "nearest annotation" check here.
-    if (_isDragging) {
-      logger.i('Ignoring long press for new annotation because we are in MOVE mode');
-      // Optionally check if user is pressing the *same* annotation we’re moving:
-      // (This requires a small nearest-annotation check if we want “instant dragging.”)
-      // Example:
-      
-      final screenPoint = ScreenCoordinate(
-        x: details.localPosition.dx,
-        y: details.localPosition.dy,
-      );
-      final mapPoint = await _mapboxMap.coordinateForPixel(screenPoint);
-      final nearestAnn = await _annotationsManager.findNearestAnnotation(mapPoint);
-
-      if (nearestAnn == _annotationMenuAnnotation) {
-        // Start or continue dragging that same annotation
-        // Possibly call _gestureHandler.handleLongPress(screenPoint) 
-        // or handle directly
-      } else {
-        // user pressed some other annotation or the map => do nothing
-        logger.i('User pressed a different annotation, ignoring');
-      }
-      
-      return; 
-    }
-
-    // If NOT in "Move" mode => we handle it normally:
     final screenPoint = ScreenCoordinate(
       x: details.localPosition.dx,
       y: details.localPosition.dy,
     );
+
+    // 1) If we’re in "MOVE" mode, do a nearest-annotation check
+    if (_isDragging) {
+      logger.i('User is in MOVE mode - checking if they pressed the same annotation');
+
+      final mapPoint = await _mapboxMap.coordinateForPixel(screenPoint);
+      final nearestAnn = await _annotationsManager.findNearestAnnotation(mapPoint);
+
+      // 2) If the user’s finger is on the *current* annotation => let them drag
+      if (nearestAnn != null && nearestAnn == _annotationMenuAnnotation) {
+        logger.i('User pressed the same annotation => allow longPress => start drag');
+        _gestureHandler.handleLongPress(screenPoint);
+      } else {
+        logger.i('User pressed a different location or annotation => ignoring => no snapping');
+      }
+
+      return; // Return regardless—so no new menu or annotation creation
+    }
+
+    // 3) If NOT in "MOVE" mode => normal logic
     _gestureHandler.handleLongPress(screenPoint);
 
   } catch (e, stackTrace) {
@@ -253,20 +244,33 @@ class EarthMapPageState extends State<EarthMapPage> {
   }
 }
 
-  void _handleLongPressMoveUpdate(LongPressMoveUpdateDetails details) {
-    try {
-      // Only drag if the user toggled the "Move" button
-      if (_isDragging) {
-        final screenPoint = ScreenCoordinate(
-          x: details.localPosition.dx,
-          y: details.localPosition.dy,
-        );
+void _handleLongPressMoveUpdate(LongPressMoveUpdateDetails details) async {
+  try {
+    // Only drag if the user toggled the "Move" button
+    if (_isDragging) {
+      final screenPoint = ScreenCoordinate(
+        x: details.localPosition.dx,
+        y: details.localPosition.dy,
+      );
+
+      // Convert the screen coords to map coords
+      final mapPoint = await _mapboxMap.coordinateForPixel(screenPoint);
+
+      // Check if user’s finger is on the same annotation we’re “moving.”
+      final nearestAnn = await _annotationsManager.findNearestAnnotation(mapPoint);
+      if (nearestAnn == _annotationMenuAnnotation) {
+        // Actually move the annotation
         _gestureHandler.handleDrag(screenPoint);
+      } else {
+        // The user is moving their finger elsewhere on the map
+        // -> do nothing, so no “jump”
+        logger.i('User is dragging on a different location or annotation -> ignoring.');
       }
-    } catch (e, stackTrace) {
-      logger.e('Error handling drag update', error: e, stackTrace: stackTrace);
     }
+  } catch (e, stackTrace) {
+    logger.e('Error handling drag update', error: e, stackTrace: stackTrace);
   }
+}
 
   void _handleLongPressEnd(LongPressEndDetails details) {
     try {
