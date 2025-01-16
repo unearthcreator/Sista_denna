@@ -57,7 +57,7 @@ class EarthMapPageState extends State<EarthMapPage> {
   // ---------------------- UUID Generator ----------------------
   final uuid = Uuid();
 
-  // 2) Keep a reference to your new AnnotationActions
+  // Keep a reference to your new AnnotationActions
   late AnnotationActions _annotationActions;
 
   @override
@@ -113,7 +113,7 @@ class EarthMapPageState extends State<EarthMapPage> {
         },
       );
 
-      // 6) Initialize your new AnnotationActions instance
+      // Initialize your new AnnotationActions instance
       _annotationActions = AnnotationActions(
         localRepo: _localRepo,
         annotationsManager: _annotationsManager,
@@ -200,7 +200,14 @@ class EarthMapPageState extends State<EarthMapPage> {
         y: details.localPosition.dy,
       );
 
-      // If we’re in MOVE mode, check if user pressed the same annotation
+      // 1) If the annotation menu is currently open, we do NOT create a new annotation
+      //    or open a new one. We skip everything.
+      if (_showAnnotationMenu) {
+        logger.i('Menu is open, ignoring long press => no new annotation creation');
+        return;
+      }
+
+      // 2) If we’re in MOVE mode, check if user pressed the same annotation
       if (_isDragging) {
         final mapPoint = await _mapboxMap.coordinateForPixel(screenPoint);
         final nearestAnn = await _annotationsManager.findNearestAnnotation(mapPoint);
@@ -213,7 +220,7 @@ class EarthMapPageState extends State<EarthMapPage> {
         return;
       }
 
-      // Not in MOVE mode => normal logic
+      // 3) Otherwise => normal logic (create annotation or open menu)
       _gestureHandler.handleLongPress(screenPoint);
 
     } catch (e, stackTrace) {
@@ -274,7 +281,6 @@ class EarthMapPageState extends State<EarthMapPage> {
       return;
     }
 
-    // If your edit logic calls annotationActions.editAnnotation
     await _annotationActions.editAnnotation(
       context: context,
       mapAnnotation: _annotationMenuAnnotation!,
@@ -316,9 +322,7 @@ class EarthMapPageState extends State<EarthMapPage> {
   // ---------------------------------------------------------------------
   Widget _buildMapWidget() {
     return GestureDetector(
-      // Let child widgets (like the menu) receive clicks
       behavior: HitTestBehavior.translucent,
-
       onLongPressStart: _handleLongPress,
       onLongPressMoveUpdate: _handleLongPressMoveUpdate,
       onLongPressEnd: _handleLongPressEnd,
@@ -379,7 +383,7 @@ class EarthMapPageState extends State<EarthMapPage> {
               isDragging: _isDragging,
               annotationButtonText: _annotationButtonText,
               onMoveOrLock: _handleMoveOrLockButton,
-              onEdit: _handleEditButton,   // <-- Edit button here
+              onEdit: _handleEditButton,
               onConnect: _handleConnectButton,
               onCancel: _handleCancelButton,
             ),

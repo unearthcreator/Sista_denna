@@ -48,8 +48,9 @@ class _DraggableAnnotationOverlayState extends State<DraggableAnnotationOverlay>
     return Stack(
       children: [
         Positioned(
-          left: _position.dx - 15, // Center the widget on the position
-          top: _position.dy - 15,
+          // We subtract half the circle's size so it's centered at `_position`
+          left: _position.dx - 25, 
+          top: _position.dy - 25,
           child: GestureDetector(
             onPanUpdate: (details) async {
               final newPosition = Offset(
@@ -81,12 +82,12 @@ class _DraggableAnnotationOverlayState extends State<DraggableAnnotationOverlay>
 
   Widget _buildDragWidget() {
     return Container(
-      width: 30,
-      height: 30,
+      width: 50,
+      height: 50,
       decoration: BoxDecoration(
-        color: Colors.blue.withOpacity(0.5),
+        color: Colors.red.withOpacity(0.3), 
         shape: BoxShape.circle,
-        border: Border.all(color: Colors.white, width: 2),
+        border: Border.all(color: Colors.red, width: 2),
       ),
     );
   }
